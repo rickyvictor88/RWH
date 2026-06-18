@@ -76,7 +76,7 @@
         <div class="dev-profile">
           <a href="index.php" title="Klik untuk kembali ke Dashboard">
             <div class="dev-avatar-img">
-              <img src="FOTO PROFIL/erna.png" alt="Foto Erna">
+              <img src="FOTO PROFIL/ERNA.jpg" alt="Foto Erna">
             </div>
           </a>
           
