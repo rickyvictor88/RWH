@@ -4,8 +4,8 @@ require_once 'config.php';
 // Pastikan request adalah POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
-    // 1. Baca payload JSON mentah dari Python
-    $json_data = file_get_contents('php://input');
+    // 1. Baca payload JSON mentah dari Python (atau dari mock_input untuk pengujian)
+    $json_data = isset($mock_input) ? $mock_input : file_get_contents('php://input');
     
     // 2. Decode JSON menjadi array PHP
     $data = json_decode($json_data, true);
@@ -26,48 +26,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status_uv      = isset($data['status_uv']) ? $data['status_uv'] : '-';
 
         try {
-            // 4. Log data ke tabel 'data_utama'
-            $sql_insert = "INSERT INTO data_utama 
-                           (id_node, tinggi_air, ntu, ket_turbidity, ec, tds, ph, status_mineral, status_hazard, status_uv) 
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            
-            $stmt = $pdo->prepare($sql_insert);
-            $stmt->execute([
-                $id_node,
-                $tinggi_air, 
-                $ntu, 
-                $ket_turbidity, 
-                $ec, 
-                $tds, 
-                $ph, 
-                $status_mineral, 
-                $status_hazard,
-                $status_uv
-            ]);
+            // 4. Baca data log.json yang sudah ada
+            $current_logs = [];
+            if (file_exists($log_file_path)) {
+                $file_content = file_get_contents($log_file_path);
+                $decoded = json_decode($file_content, true);
+                if (is_array($decoded)) {
+                    $current_logs = $decoded;
+                }
+            }
 
-            // [OPSIONAL] 5. Jika kamu masih punya tabel 'sensor_dashboard' untuk di-update,
-            // Hapus tanda komentar (/* ... */) di bawah ini:
-            /*
-            $sql_update = "UPDATE sensor_dashboard SET 
-                           tinggi_air = ?, ntu = ?, kualitas_air = ?, 
-                           ec = ?, tds = ?, ph = ?, 
-                           status_mineral = ?, status_hazard = ? 
-                           WHERE id = 1";
-            $pdo->prepare($sql_update)->execute([
-                $tinggi_air, $ntu, $ket_turbidity, 
-                $ec, $tds, $ph, 
-                $status_mineral, $status_hazard
-            ]);
-            */
+            // 5. Buat data log baru dengan timestamp dari backend
+            $new_log = [
+                "id_node"        => $id_node,
+                "tinggi_air"     => $tinggi_air,
+                "ntu"            => $ntu,
+                "ket_turbidity"  => $ket_turbidity,
+                "ec"             => $ec,
+                "tds"            => $tds,
+                "ph"             => $ph,
+                "status_mineral" => $status_mineral,
+                "status_hazard"  => $status_hazard,
+                "status_uv"      => $status_uv,
+                "created_at"     => date('Y-m-d H:i:s')
+            ];
 
-            // 6. Beri respon ke Python bahwa sukses
-            http_response_code(200);
-            echo json_encode(["status" => "success", "message" => "Data berhasil disimpan."]);
+            // 6. Push data baru ke akhir array
+            $current_logs[] = $new_log;
 
-        } catch (PDOException $e) {
-            // Tangkap error jika ada kolom atau nama tabel yang salah ketik
+            // 7. Batasi hanya menyimpan 10 log terakhir (FIFO)
+            if (count($current_logs) > 10) {
+                $current_logs = array_slice($current_logs, -10);
+            }
+
+            // 8. Tulis kembali ke file log.json
+            $write_success = file_put_contents($log_file_path, json_encode($current_logs, JSON_PRETTY_PRINT));
+
+            if ($write_success !== false) {
+                http_response_code(200);
+                echo json_encode(["status" => "success", "message" => "Data berhasil disimpan."]);
+            } else {
+                http_response_code(500);
+                echo json_encode(["status" => "error", "message" => "Gagal menulis ke file log.json."]);
+            }
+
+        } catch (Exception $e) {
             http_response_code(500);
-            echo json_encode(["status" => "error", "message" => "Database Error: " . $e->getMessage()]);
+            echo json_encode(["status" => "error", "message" => "Server Error: " . $e->getMessage()]);
         }
         
     } else {

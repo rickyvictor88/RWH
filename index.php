@@ -7,11 +7,11 @@
  * Menggunakan Chart.js untuk grafik dan JavaScript Fetch untuk polling data tanpa reload.
  */
 
-// Panggil file konfigurasi database
+// Panggil file konfigurasi sistem
 require_once __DIR__ . '/api/config.php';
 
-// Inisialisasi variabel status database
-$db_connected = isset($pdo) && !isset($db_connection_error);
+// Inisialisasi variabel status sistem (Database-less)
+$system_active = isset($system_active) ? $system_active : true;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -49,8 +49,8 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
       
       <div class="system-status" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
         <div id="connection-indicator" class="live-indicator">
-          <div id="status-dot" class="pulse-dot <?= $db_connected ? '' : 'disconnected' ?>"></div>
-          <span id="status-text"><?= $db_connected ? 'Sistem Aktif' : 'Database Terputus' ?></span>
+          <div id="status-dot" class="pulse-dot <?= $system_active ? '' : 'disconnected' ?>"></div>
+          <span id="status-text"><?= $system_active ? 'Sistem Aktif' : 'Sistem Terputus' ?></span>
         </div>
 
         <!-- Wadah Logo (Logo 1 & Logo 2) -->
@@ -76,23 +76,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
     <!-- MAIN DASHBOARD CONTENT -->
     <main>
       
-      <?php if (!$db_connected): ?>
-        <!-- BANNER PETUNJUK SETUP DATABASE LARAGON -->
-        <section class="error-banner glass-card" id="db-error-section">
-          <h3><i class="fa-solid fa-triangle-exclamation"></i> KONEKSI DATABASE MYSQL GAGAL</h3>
-          <p>Sistem tidak dapat terhubung ke database MySQL. Jika Anda menguji di <strong>Laragon</strong>, silakan ikuti langkah-langkah mudah di bawah ini:</p>
-          <ol style="margin-left: 1.5rem; margin-top: 0.5rem; font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.4rem;">
-            <li>Pastikan server <strong>Apache</strong> dan <strong>MySQL</strong> di Laragon Anda sudah aktif (Klik tombol <em>"Start All"</em> di aplikasi Laragon).</li>
-            <li>Buka <strong>phpMyAdmin</strong> atau <strong>HeidiSQL</strong> (Klik tombol <em>"Database"</em> di Laragon).</li>
-            <li>Buat database baru bernama <code>rwh_db</code>.</li>
-            <li>Import file schema SQL yang ada di direktori proyek ini: <br><code>[FOLDER_PROYEK]/schema.sql</code></li>
-            <li>Refresh halaman ini setelah database berhasil dibuat dan di-import!</li>
-          </ol>
-          <p style="margin-top: 0.5rem; font-size: 0.8rem; font-style: italic; color: var(--text-muted);">
-            Pesan Kesalahan: <code><?= htmlspecialchars($db_connection_error ?? 'PDO tidak terinisialisasi') ?></code>
-          </p>
-        </section>
-      <?php endif; ?>
+      <!-- Database-less active: MySQL setup guide removed -->
 
       <div class="dashboard-grid">
         
@@ -310,7 +294,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
   <script>
     // Inisialisasi variabel Grafik Chart.js
     let trendChartObj = null;
-    let dbConnected = <?= $db_connected ? 'true' : 'false' ?>;
+    let systemActive = <?= $system_active ? 'true' : 'false' ?>;
     const MAX_TINGGI = 150; // Tinggi maksimum tangki air (150 cm)
 
     // Fungsi utama inisialisasi grafik Chart.js
@@ -409,7 +393,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
 
     // Fungsi utama mengambil data dari API PHP
     async function fetchWaterQualityData() {
-      if (!dbConnected) return;
+      if (!systemActive) return;
 
       try {
         const response = await fetch('api/get_data.php');
@@ -465,7 +449,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
               turbLabel.className = 'badge-small sangat-baik';
             } else if (latest.ket_turbidity && latest.ket_turbidity.toLowerCase().includes('agak keruh')) {
               turbLabel.className = 'badge-small perlu-filtrasi';
-            } else {
+            } else if (latest.ket_turbidity && latest.ket_turbidity.toLowerCase().includes('kotor')) {
               turbLabel.className = 'badge-small tercemar';
             }
 
@@ -503,14 +487,20 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
              // 6. UPDATE BADGE KUALITAS KESELURUHAN (STATUS BADGE)
              const badge = document.getElementById('overall-status-badge');
              let overallStatus = 'Sangat Baik';
-             
-             // Cek kondisi tercemar terlebih dahulu karena tingkat keparahan lebih tinggi
-             if (phVal < 6.0 || phVal > 9.0 || tdsVal >= 600 || (latest.ket_turbidity && latest.ket_turbidity.toLowerCase().includes('keruh') && !latest.ket_turbidity.toLowerCase().includes('agak'))) {
-               overallStatus = 'Tercemar';
-             }
-             else if (phVal < 6.5 || phVal > 8.5 || tdsVal >= 550 || (latest.ket_turbidity && latest.ket_turbidity.toLowerCase().includes('agak keruh'))) {
-               overallStatus = 'Perlu Filtrasi';
-             }
+                          // Cek kondisi tercemar: hanya pH/TDS ekstrem
+              if (phVal < 6.0 || phVal > 9.0 || tdsVal >= 600) {
+                overallStatus = 'Tercemar';
+              }
+              // Cek perlu filtrasi: pH/TDS borderline ATAU turbidity kotor/keruh
+              else if (
+                phVal < 6.5 || phVal > 8.5 || tdsVal >= 550 ||
+                (latest.ket_turbidity && (
+                  latest.ket_turbidity.toLowerCase().includes('kotor') ||
+                  latest.ket_turbidity.toLowerCase().includes('keruh')
+                ))
+              ) {
+                overallStatus = 'Perlu Filtrasi';
+              }
 
              if (overallStatus === 'Sangat Baik') {
                badge.className = 'status-badge status-sangat-baik';
@@ -529,22 +519,18 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
              const uvText = document.getElementById('uv-status-text');
              const uvDesc = document.getElementById('uv-desc');
              
-             if (overallStatus === 'Perlu Filtrasi' || overallStatus === 'Tercemar') {
-               // UV Aktif
+             if (overallStatus === 'Tercemar') {
+               // UV Aktif karena kualitas air tercemar
                uvLight.className = 'uv-light-bulb active';
                uvBadge.className = 'uv-status-badge uv-status-active';
                uvText.textContent = 'AKTIF';
-               if (overallStatus === 'Tercemar') {
-                 uvDesc.textContent = 'Air Kotor / Tercemar! Sinar UV aktif membunuh kuman & patogen.';
-               } else {
-                 uvDesc.textContent = 'Air Perlu Filtrasi. Sinar UV aktif mensterilkan air.';
-               }
+               uvDesc.textContent = 'UV aktif — air terdeteksi tercemar.';
              } else {
-               // UV Nonaktif (Air bersih)
+               // UV Nonaktif karena kualitas air aman
                uvLight.className = 'uv-light-bulb';
                uvBadge.className = 'uv-status-badge uv-status-inactive';
                uvText.textContent = 'NONAKTIF';
-               uvDesc.textContent = 'Air Bersih — Sinar UV tidak aktif.';
+               uvDesc.textContent = 'UV nonaktif — kualitas air aman.';
              }
  
              // Periksa jika data IoT mati / tidak mengirim data baru
@@ -557,6 +543,21 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
                document.getElementById('status-dot').className = 'pulse-dot disconnected';
                document.getElementById('status-text').textContent = 'IoT Pi Terputus';
              }
+           } else {
+             // Jika tidak ada data sensor terbaru (log.json kosong)
+             document.getElementById('status-dot').className = 'pulse-dot disconnected';
+             document.getElementById('status-text').textContent = 'Menunggu Data';
+
+             // Set status overall badge ke mode menunggu
+             const badge = document.getElementById('overall-status-badge');
+             badge.className = 'status-badge status-perlu-filtrasi';
+             badge.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> <span id="status-badge-text">Kualitas: Menunggu Data...</span>';
+             
+             // Reset status UV
+             document.getElementById('uv-light').className = 'uv-light-bulb';
+             document.getElementById('uv-status-badge').className = 'uv-status-badge uv-status-inactive';
+             document.getElementById('uv-status-text').textContent = 'NONAKTIF';
+             document.getElementById('uv-desc').textContent = 'Menunggu data dari alat...';
            }
  
            // 7. UPDATE RINGKASAN STATISTIK HARI INI & GRAFIK DARI DATA LOG
@@ -589,18 +590,26 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
              
              // Tampilkan history dengan urutan terbaru di atas
              history.forEach((log, index) => {
-               let badgeClass = 'sangat-baik';
-               let logStatus = 'Sangat Baik';
-               const logPh = parseFloat(log.ph);
-               const logTds = parseFloat(log.tds);
-               
-               if (logPh < 6.0 || logPh > 9.0 || logTds >= 750 || (log.ket_turbidity && log.ket_turbidity.toLowerCase().includes('keruh'))) {
-                 badgeClass = 'tercemar';
-                 logStatus = 'Tercemar';
-               } else if (logPh < 6.5 || logPh > 8.5 || logTds >= 550) {
-                 badgeClass = 'perlu-filtrasi';
-                 logStatus = 'Perlu Filter';
+               // Gunakan logika overallStatus yang sama persis dengan badge kualitas utama
+               const logPh  = parseFloat(log.ph);
+               const logTds = parseInt(log.tds);
+               const logTurb = (log.ket_turbidity || '').toLowerCase();
+
+               let logOverall = 'Sangat Baik';
+               if (logPh < 6.0 || logPh > 9.0 || logTds >= 600) {
+                 // Tercemar: hanya dari pH/TDS ekstrem
+                 logOverall = 'Tercemar';
+               } else if (
+                 logPh < 6.5 || logPh > 8.5 || logTds >= 550 ||
+                 logTurb.includes('kotor') || logTurb.includes('keruh')
+               ) {
+                 // Perlu Filtrasi: pH/TDS borderline ATAU air kotor/keruh
+                 logOverall = 'Perlu Filtrasi';
                }
+
+               const badgeClassMap = { 'Sangat Baik': 'sangat-baik', 'Perlu Filtrasi': 'perlu-filtrasi', 'Tercemar': 'tercemar' };
+               const badgeClass = badgeClassMap[logOverall];
+               const logStatus = logOverall;
                
                const formattedTime = log.created_at ? log.created_at.substring(11, 19) : '--';
                const formattedDate = log.created_at ? log.created_at.substring(0, 10) : '--';
@@ -638,11 +647,11 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
              
              tbody.innerHTML = tableRowsHTML;
           } else {
-            // Data kosong dalam database
+            // Data kosong dalam cache log.json
             document.getElementById('logs-table-body').innerHTML = `
               <tr>
                 <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
-                  <i class="fa-solid fa-circle-info"></i> Database terhubung, tetapi belum ada data sensor yang masuk. Silakan jalankan script simulator Raspberry Pi Anda!
+                  <i class="fa-solid fa-circle-info"></i> Sistem aktif, tetapi belum ada data sensor yang masuk. Silakan jalankan script simulator Raspberry Pi Anda!
                 </td>
               </tr>
             `;
@@ -658,7 +667,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
     // Jalankan pertama kali saat halaman dimuat
     document.addEventListener("DOMContentLoaded", () => {
       // Inisialisasi awal chart dengan array kosong agar canvas siap
-      if (dbConnected) {
+      if (systemActive) {
         initChart([], [], []);
         // Ambil data pertama kali
         fetchWaterQualityData();
@@ -668,7 +677,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
         document.getElementById('logs-table-body').innerHTML = `
           <tr>
             <td colspan="7" style="text-align: center; color: #ff5252; padding: 2rem;">
-              <i class="fa-solid fa-triangle-exclamation"></i> Gagal memuat data karena database belum terhubung. Ikuti petunjuk penyusunan database di atas!
+              <i class="fa-solid fa-triangle-exclamation"></i> Gagal memuat data karena sistem backend tidak aktif.
             </td>
           </tr>
         `;

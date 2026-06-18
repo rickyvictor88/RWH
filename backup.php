@@ -7,11 +7,11 @@
  * Menggunakan Chart.js untuk grafik dan JavaScript Fetch untuk polling data tanpa reload.
  */
 
-// Panggil file konfigurasi database
+// Panggil file konfigurasi sistem
 require_once __DIR__ . '/api/config.php';
 
-// Inisialisasi variabel status database
-$db_connected = isset($pdo) && !isset($db_connection_error);
+// Inisialisasi variabel status sistem (Database-less)
+$system_active = isset($system_active) ? $system_active : true;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -49,8 +49,8 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
       
       <div class="system-status" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
         <div id="connection-indicator" class="live-indicator">
-          <div id="status-dot" class="pulse-dot <?= $db_connected ? '' : 'disconnected' ?>"></div>
-          <span id="status-text"><?= $db_connected ? 'Sistem Aktif' : 'Database Terputus' ?></span>
+          <div id="status-dot" class="pulse-dot <?= $system_active ? '' : 'disconnected' ?>"></div>
+          <span id="status-text"><?= $system_active ? 'Sistem Aktif' : 'Sistem Terputus' ?></span>
         </div>
 
         <!-- Wadah Logo (Logo 1 & Logo 2) -->
@@ -76,23 +76,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
     <!-- MAIN DASHBOARD CONTENT -->
     <main>
       
-      <?php if (!$db_connected): ?>
-        <!-- BANNER PETUNJUK SETUP DATABASE LARAGON -->
-        <section class="error-banner glass-card" id="db-error-section">
-          <h3><i class="fa-solid fa-triangle-exclamation"></i> KONEKSI DATABASE MYSQL GAGAL</h3>
-          <p>Sistem tidak dapat terhubung ke database MySQL. Jika Anda menguji di <strong>Laragon</strong>, silakan ikuti langkah-langkah mudah di bawah ini:</p>
-          <ol style="margin-left: 1.5rem; margin-top: 0.5rem; font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.4rem;">
-            <li>Pastikan server <strong>Apache</strong> dan <strong>MySQL</strong> di Laragon Anda sudah aktif (Klik tombol <em>"Start All"</em> di aplikasi Laragon).</li>
-            <li>Buka <strong>phpMyAdmin</strong> atau <strong>HeidiSQL</strong> (Klik tombol <em>"Database"</em> di Laragon).</li>
-            <li>Buat database baru bernama <code>rwh_db</code>.</li>
-            <li>Import file schema SQL yang ada di direktori proyek ini: <br><code>[FOLDER_PROYEK]/schema.sql</code></li>
-            <li>Refresh halaman ini setelah database berhasil dibuat dan di-import!</li>
-          </ol>
-          <p style="margin-top: 0.5rem; font-size: 0.8rem; font-style: italic; color: var(--text-muted);">
-            Pesan Kesalahan: <code><?= htmlspecialchars($db_connection_error ?? 'PDO tidak terinisialisasi') ?></code>
-          </p>
-        </section>
-      <?php endif; ?>
+      <!-- Database-less active: MySQL setup guide removed -->
 
       <div class="dashboard-grid">
         
@@ -294,7 +278,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
   <script>
     // Inisialisasi variabel Grafik Chart.js
     let trendChartObj = null;
-    let dbConnected = <?= $db_connected ? 'true' : 'false' ?>;
+    let systemActive = <?= $system_active ? 'true' : 'false' ?>;
     const MAX_TINGGI = 150; // Tinggi maksimum tangki air (150 cm)
 
     // Fungsi utama inisialisasi grafik Chart.js
@@ -393,7 +377,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
 
     // Fungsi utama mengambil data dari API PHP
     async function fetchWaterQualityData() {
-      if (!dbConnected) return;
+      if (!systemActive) return;
 
       try {
         const response = await fetch('api/get_data.php');
@@ -488,7 +472,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
              const badge = document.getElementById('overall-status-badge');
              let overallStatus = 'Sangat Baik';
              
-             if (phVal < 6.0 || phVal > 9.0 || tdsVal >= 600 || (latest.ket_turbidity && latest.ket_turbidity.toLowerCase().includes('keruh'))) {
+             if (phVal < 6.0 || phVal > 9.0 || tdsVal >= 600 || (latest.ket_turbidity && (latest.ket_turbidity.toLowerCase().includes('keruh') || latest.ket_turbidity.toLowerCase().includes('kotor')))) {
                overallStatus = 'Tercemar';
              } else if (phVal < 6.5 || phVal > 8.5 || tdsVal >= 550) {
                overallStatus = 'Perlu Filtrasi';
@@ -515,6 +499,15 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
                document.getElementById('status-dot').className = 'pulse-dot disconnected';
                document.getElementById('status-text').textContent = 'IoT Pi Terputus';
              }
+           } else {
+             // Jika tidak ada data sensor terbaru (log.json kosong)
+             document.getElementById('status-dot').className = 'pulse-dot disconnected';
+             document.getElementById('status-text').textContent = 'Menunggu Data';
+
+             // Set status overall badge ke mode menunggu
+             const badge = document.getElementById('overall-status-badge');
+             badge.className = 'status-badge status-perlu-filtrasi';
+             badge.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> <span id="status-badge-text">Kualitas: Menunggu Data...</span>';
            }
  
            // 7. UPDATE RINGKASAN STATISTIK HARI INI & GRAFIK DARI DATA LOG
@@ -595,16 +588,16 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
              });
              
              tbody.innerHTML = tableRowsHTML;
-          } else {
-            // Data kosong dalam database
-            document.getElementById('logs-table-body').innerHTML = `
-              <tr>
-                <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
-                  <i class="fa-solid fa-circle-info"></i> Database terhubung, tetapi belum ada data sensor yang masuk. Silakan jalankan script simulator Raspberry Pi Anda!
-                </td>
-              </tr>
-            `;
-          }
+           } else {
+             // Data kosong dalam cache log.json
+             document.getElementById('logs-table-body').innerHTML = `
+               <tr>
+                 <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                   <i class="fa-solid fa-circle-info"></i> Sistem aktif, tetapi belum ada data sensor yang masuk. Silakan jalankan script simulator Raspberry Pi Anda!
+                 </td>
+               </tr>
+             `;
+           }
         }
       } catch (error) {
         console.error('Error fetching sensor data:', error);
@@ -616,7 +609,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
     // Jalankan pertama kali saat halaman dimuat
     document.addEventListener("DOMContentLoaded", () => {
       // Inisialisasi awal chart dengan array kosong agar canvas siap
-      if (dbConnected) {
+      if (systemActive) {
         initChart([], [], []);
         // Ambil data pertama kali
         fetchWaterQualityData();
@@ -626,7 +619,7 @@ $db_connected = isset($pdo) && !isset($db_connection_error);
         document.getElementById('logs-table-body').innerHTML = `
           <tr>
             <td colspan="7" style="text-align: center; color: #ff5252; padding: 2rem;">
-              <i class="fa-solid fa-triangle-exclamation"></i> Gagal memuat data karena database belum terhubung. Ikuti petunjuk penyusunan database di atas!
+              <i class="fa-solid fa-triangle-exclamation"></i> Gagal memuat data karena sistem backend tidak aktif.
             </td>
           </tr>
         `;

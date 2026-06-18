@@ -8,28 +8,34 @@ header('Access-Control-Allow-Origin: *');
 require_once 'config.php'; 
 
 try {
-    // 1. AMBIL DATA TERBARU UNTUK DASHBOARD (Kartu Metrik)
-    // Mengambil 1 baris terakhir berdasarkan ID tertinggi (paling baru)
-    $stmtDash = $pdo->query("SELECT * FROM data_utama ORDER BY id DESC LIMIT 1");
-    $dataDashboard = $stmtDash->fetch(PDO::FETCH_ASSOC);
+    $dataDashboard = null;
+    $dataLog = [];
 
-    // 2. AMBIL DATA LOG (Untuk Grafik)
-    // Mengambil 10 baris terakhir dari data_utama (sudah mencakup semua sensor)
-    $stmtLog = $pdo->query("SELECT * FROM data_utama ORDER BY id DESC LIMIT 10");
-    $dataLog = $stmtLog->fetchAll(PDO::FETCH_ASSOC);
+    // 1. Baca data dari log.json
+    if (file_exists($log_file_path)) {
+        $file_content = file_get_contents($log_file_path);
+        $decoded = json_decode($file_content, true);
+        if (is_array($decoded) && count($decoded) > 0) {
+            // Data paling akhir di array adalah data terbaru
+            $dataDashboard = end($decoded);
+            
+            // Urutan log di reversed agar data terbaru berada di index paling depan (indeks 0)
+            $dataLog = array_reverse($decoded);
+        }
+    }
 
-    // 3. GABUNGKAN SEMUA
+    // 2. Kirimkan respon JSON yang kompatibel dengan frontend
     echo json_encode([
         "status" => "success",
-        "data" => $dataDashboard,   // Ini untuk mengisi kartu metrik (angka-angka terbaru)
-        "data_log" => $dataLog      // Ini untuk grafik (berisi histori semua sensor)
+        "data" => $dataDashboard,   // Mengisi kartu metrik (angka terbaru)
+        "data_log" => $dataLog      // Mengisi grafik & tabel riwayat (10 data terakhir, terbalik)
     ]);
 
-} catch (PDOException $e) {
+} catch (Exception $e) {
     http_response_code(500);
     echo json_encode([
         "status" => "error",
-        "message" => "Database Error: " . $e->getMessage()
+        "message" => "Server Error: " . $e->getMessage()
     ]);
 }
 ?>
