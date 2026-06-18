@@ -48,10 +48,7 @@ $system_active = isset($system_active) ? $system_active : true;
       </div>
       
       <div class="system-status" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-        <div id="connection-indicator" class="live-indicator">
-          <div id="status-dot" class="pulse-dot <?= $system_active ? '' : 'disconnected' ?>"></div>
-          <span id="status-text"><?= $system_active ? 'Sistem Aktif' : 'Sistem Terputus' ?></span>
-        </div>
+
 
         <!-- Wadah Logo (Logo 1 & Logo 2) -->
         <div class="logo-container" title="Wadah Logo Instansi / Sponsor">
@@ -405,10 +402,6 @@ $system_active = isset($system_active) ? $system_active : true;
         const res = await response.json();
         
         if (res.status === 'success') {
-          // Sistem terhubung penuh
-          document.getElementById('status-dot').className = 'pulse-dot';
-          document.getElementById('status-text').textContent = 'Sistem Aktif';
-          
           const latest = res.data;
           
           if (latest) {
@@ -533,20 +526,8 @@ $system_active = isset($system_active) ? $system_active : true;
                uvDesc.textContent = 'UV nonaktif — kualitas air aman.';
              }
  
-             // Periksa jika data IoT mati / tidak mengirim data baru
-             const lastDataTime = new Date(latest.created_at).getTime();
-             const nowTime = new Date().getTime();
-             const diffSeconds = (nowTime - lastDataTime) / 1000;
-             
-             // Jika data terakhir dikirim > 30 detik yang lalu, tandai status IoT terputus
-             if (diffSeconds > 30) {
-               document.getElementById('status-dot').className = 'pulse-dot disconnected';
-               document.getElementById('status-text').textContent = 'IoT Pi Terputus';
-             }
+
            } else {
-             // Jika tidak ada data sensor terbaru (log.json kosong)
-             document.getElementById('status-dot').className = 'pulse-dot disconnected';
-             document.getElementById('status-text').textContent = 'Menunggu Data';
 
              // Set status overall badge ke mode menunggu
              const badge = document.getElementById('overall-status-badge');
@@ -659,8 +640,6 @@ $system_active = isset($system_active) ? $system_active : true;
         }
       } catch (error) {
         console.error('Error fetching sensor data:', error);
-        document.getElementById('status-dot').className = 'pulse-dot disconnected';
-        document.getElementById('status-text').textContent = 'API Error';
       }
     }
 
